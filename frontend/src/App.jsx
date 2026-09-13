@@ -24,7 +24,7 @@ function StoreContent() {
 
   const loadProducts = async () => {
     try {
-      const res = await fetch('http://localhost:5000/api/products');
+      const res = await fetch('https://teena-secret-web-production-fbaf.up.railway.app/api/products');
       const data = await res.json();
       if (data.success) setProducts(data.products);
     } catch (e) {
