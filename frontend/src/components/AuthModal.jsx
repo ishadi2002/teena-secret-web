@@ -37,7 +37,7 @@ export default function AuthModal({ isOpen, onClose, onSuccess }) {
           : { name, email: cleanEmail, password: cleanPassword, phone: phone || '0700000000' };
       }
 
-      const res = await fetch(`http://localhost:5000${endpoint}`, {
+      const res = await fetch(`https://teena-secret-web-production-fbaf.up.railway.app${endpoint}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
