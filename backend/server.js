@@ -34,6 +34,11 @@ const transporter = nodemailer.createTransport({
 
 setInterval(() => {}, 1 << 30);
 
+// Root Route (ބ්‍රව්සර් එකෙන් ලින්ක් එක ඕපන් කළ විට 502 එරර් එක නොදී වැඩ කිරීමට)
+app.get('/', (req, res) => {
+  res.json({ success: true, message: "Teena's Secret Backend is Running Successfully!" });
+});
+
 // Product Schema & Model
 const productSchema = new mongoose.Schema({
   name: { type: String, required: true },
@@ -454,7 +459,7 @@ app.patch('/api/orders/:id/status', async (req, res) => {
 });
 
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`Server running continuously on http://localhost:${PORT}`);
+  console.log(`Server running continuously on port ${PORT}`);
   mongoose.connect(MONGO_URI, { 
     serverSelectionTimeoutMS: 30000,
     socketTimeoutMS: 45000,
