@@ -14,9 +14,10 @@ app.use(cors({ origin: '*' }));
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
-const PORT = 5000;
-const MONGO_URI = "mongodb+srv://teena_admin:Teena12345i@cluster.wci1ahb.mongodb.net/teena_store?retryWrites=true&w=majority&appName=Cluster";
-const JWT_SECRET = "teena_secret_jwt_key_2025";
+// Railway එකෙන් දෙන PORT එක හෝ නැත්නම් 5000 පාවිච්චි කිරීමට සැලැස්වීම
+const PORT = process.env.PORT || 5000;
+const MONGO_URI = process.env.MONGO_URI || "mongodb+srv://teena_admin:Teena12345i@cluster.wci1ahb.mongodb.net/teena_store?retryWrites=true&w=majority&appName=Cluster";
+const JWT_SECRET = process.env.JWT_SECRET || "teena_secret_jwt_key_2025";
 
 // Official PayHere Sandbox Credentials
 const MERCHANT_ID = "1237984";
@@ -375,7 +376,6 @@ app.patch('/api/orders/:id/status', async (req, res) => {
     }
   }
 
-  // Send Email if status is Confirmed or Completed (Flexible check)
   const upperStatus = status ? status.toUpperCase() : '';
   if (targetOrder && (upperStatus.includes('CONFIRM') || upperStatus.includes('COMPLETE'))) {
     const customerEmail = targetOrder.customerEmail;
