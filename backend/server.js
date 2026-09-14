@@ -19,7 +19,7 @@ app.use(cors({
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
-// Railway dynamically assigns PORT (default fallback to 5000 for local development)
+// Railway dynamically assigns PORT
 const PORT = process.env.PORT || 5000;
 const MONGO_URI = process.env.MONGO_URI || "mongodb+srv://teena_admin:Teena12345i@cluster.wci1ahb.mongodb.net/teena_store?retryWrites=true&w=majority&appName=Cluster";
 const JWT_SECRET = process.env.JWT_SECRET || "teena_secret_jwt_key_2025";
@@ -31,42 +31,21 @@ const googleClient = new OAuth2Client(GOOGLE_CLIENT_ID);
 const MERCHANT_ID = process.env.PAYHERE_MERCHANT_ID || "1237984";
 const MERCHANT_SECRET = process.env.PAYHERE_SECRET || "MzQyMjM1OTM2NjEyODkyMTExMjkzNDQwNDk5NDAzMTc1MDUzMDc3";
 
-// Robust Nodemailer Transporter using Port 587 (STARTTLS)
-// Uses family: 4 to prevent ENETUNREACH IPv6 routing errors on cloud containers
+// Robust Nodemailer Transporter
 const transporter = nodemailer.createTransport({
-  host: 'smtp.gmail.com',
-  port: 587,
-  secure: false, // Must be false for 587 (upgrades via STARTTLS)
-  family: 4,     // Explicitly forces IPv4
+  service: 'gmail',
   auth: {
     user: process.env.EMAIL_USER,
     pass: process.env.EMAIL_PASS
   },
   tls: {
     rejectUnauthorized: false
-  },
-  connectionTimeout: 10000 // Prevents infinite hanging
+  }
 });
-
-// Non-blocking asynchronous verification check (Never blocks Railway health check)
-setTimeout(() => {
-  transporter.verify((err) => {
-    if (err) {
-      console.warn('⚠️ [Email Transporter Status]: Verification failed or timed out:', err.message);
-    } else {
-      console.log('✅ [Email Transporter Status]: Ready to send emails via Gmail SMTP (Port 587).');
-    }
-  });
-}, 4000);
 
 // Helper: Welcome Email
 const sendWelcomeEmail = async (customerEmail, customerName) => {
-  if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
-    console.warn('[Email Warning]: Skipping welcome email. EMAIL_USER or EMAIL_PASS not defined.');
-    return;
-  }
-  if (!customerEmail) return;
-
+  if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS || !customerEmail) return;
   try {
     const info = await transporter.sendMail({
       from: `"Teena's Secret" <${process.env.EMAIL_USER}>`,
@@ -91,22 +70,15 @@ const sendWelcomeEmail = async (customerEmail, customerName) => {
         </div>
       `
     });
-    console.log(`[Email Dispatched]: Welcome email sent to ${customerEmail} (MessageId: ${info.messageId})`);
+    console.log(`[Email Dispatched]: Welcome email sent to ${customerEmail}`);
   } catch (err) {
-    console.error('[Email Error - Registration]:', err.message);
+    console.warn('[Email Warning - Registration]: Could not send welcome email:', err.message);
   }
 };
 
 // Helper: Order Confirmation Email
 const sendOrderConfirmationEmail = async (order) => {
-  if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
-    console.warn('[Email Warning]: Skipping order confirmation email. EMAIL_USER or EMAIL_PASS not defined.');
-    return;
-  }
-  if (!order || !order.customerEmail) {
-    console.warn('[Email Warning]: Order has no customerEmail. Confirmation email not sent.');
-    return;
-  }
+  if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS || !order || !order.customerEmail) return;
 
   try {
     const itemsRows = (order.items || []).map(item => `
@@ -117,7 +89,7 @@ const sendOrderConfirmationEmail = async (order) => {
       </tr>
     `).join('');
 
-    const info = await transporter.sendMail({
+    await transporter.sendMail({
       from: `"Teena's Secret" <${process.env.EMAIL_USER}>`,
       to: order.customerEmail,
       subject: `Order Confirmation - #${String(order._id).slice(-6).toUpperCase()}`,
@@ -160,17 +132,21 @@ const sendOrderConfirmationEmail = async (order) => {
         </div>
       `
     });
-    console.log(`[Email Dispatched]: Order confirmation sent to ${order.customerEmail} (MessageId: ${info.messageId})`);
+    console.log(`[Email Dispatched]: Order confirmation sent to ${order.customerEmail}`);
   } catch (err) {
-    console.error('[Email Error - Order Confirmation]:', err.message);
+    console.warn('[Email Warning - Order Confirmation]: Could not send order email:', err.message);
   }
 };
 
 setInterval(() => {}, 1 << 30);
 
-// Root Route (Railway Health Check)
+// Root & Healthcheck Endpoints
 app.get('/', (req, res) => {
-  res.json({ success: true, message: "Teena's Secret Backend is Running Successfully on Railway!" });
+  res.status(200).json({ success: true, message: "Teena's Secret Backend is Running Successfully on Railway!" });
+});
+
+app.get('/health', (req, res) => {
+  res.status(200).send('OK');
 });
 
 // Product Schema & Model
@@ -423,7 +399,6 @@ app.post('/api/auth/register', async (req, res) => {
       } catch (e) { localUsers.push(newUserObj); }
     } else { localUsers.push(newUserObj); }
 
-    // Dispatch welcome email
     sendWelcomeEmail(cleanEmail, name);
 
     const token = jwt.sign({ email: cleanEmail, role: 'customer' }, JWT_SECRET, { expiresIn: '7d' });
@@ -536,8 +511,6 @@ app.delete('/api/products/:id', async (req, res) => {
 });
 
 // --- ORDER ROUTES ---
-
-// 1. Customer Order History
 app.get('/api/orders/user/:email', async (req, res) => {
   try {
     const rawEmail = decodeURIComponent(req.params.email).trim().toLowerCase();
@@ -560,7 +533,6 @@ app.get('/api/orders/user/:email', async (req, res) => {
   }
 });
 
-// 2. All Orders (Admin)
 app.get('/api/orders', async (req, res) => {
   try {
     let dbOrders = [];
@@ -576,7 +548,6 @@ app.get('/api/orders', async (req, res) => {
   }
 });
 
-// 3. Create New Order (Sends Customer Receipt Email)
 app.post('/api/orders', async (req, res) => {
   try {
     const cleanCustomerEmail = (req.body.customerEmail || '').trim().toLowerCase();
@@ -595,7 +566,7 @@ app.post('/api/orders', async (req, res) => {
     const finalOrder = savedOrder ? savedOrder.toObject() : { ...orderPayload, _id: 'ord_' + Date.now() };
     localOrders.unshift(finalOrder);
 
-    // Send itemized confirmation email
+    // Send confirmation in background without blocking response
     sendOrderConfirmationEmail(finalOrder);
 
     res.json({ success: true, order: finalOrder });
@@ -605,7 +576,6 @@ app.post('/api/orders', async (req, res) => {
   }
 });
 
-// 4. Update Order Status (Sends Status Notification Email)
 app.patch('/api/orders/:id/status', async (req, res) => {
   const { id } = req.params;
   const { status } = req.body;
@@ -625,10 +595,9 @@ app.patch('/api/orders/:id/status', async (req, res) => {
     }
   }
 
-  // Send status update notification email
   if (targetOrder && targetOrder.customerEmail && process.env.EMAIL_USER && process.env.EMAIL_PASS) {
     try {
-      await transporter.sendMail({
+      transporter.sendMail({
         from: `"Teena's Secret" <${process.env.EMAIL_USER}>`,
         to: targetOrder.customerEmail,
         subject: `Order Status Update: ${status} (#${String(targetOrder._id).slice(-6).toUpperCase()})`,
@@ -640,20 +609,20 @@ app.patch('/api/orders/:id/status', async (req, res) => {
             <p style="color: #888; font-size: 11px; margin-top: 20px;">Teena's Secret Beauty Store</p>
           </div>
         `
-      });
+      }).catch(err => console.warn('[Email Warning]:', err.message));
     } catch (e) {}
   }
 
   res.json({ success: true, message: "Status updated", order: targetOrder });
 });
 
-// Railway requires binding to 0.0.0.0
+// Bind explicitly to 0.0.0.0
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server running continuously on port ${PORT}`);
   mongoose.connect(MONGO_URI, { 
     serverSelectionTimeoutMS: 30000,
     socketTimeoutMS: 45000,
-    family: 4 // Force IPv4 to bypass SRV DNS timeouts on cloud containers
+    family: 4
   })
     .then(() => console.log('MongoDB Connected Successfully'))
     .catch((err) => console.log('MongoDB Connection Failed:', err.message));
