@@ -1,5 +1,6 @@
 ﻿import React, { useState } from 'react';
 import { X, AlertCircle } from 'lucide-react';
+import { GoogleLogin } from '@react-oauth/google';
 
 export default function AuthModal({ isOpen, onClose, onSuccess }) {
   const [isLogin, setIsLogin] = useState(true);
@@ -67,6 +68,45 @@ export default function AuthModal({ isOpen, onClose, onSuccess }) {
         }
         onClose();
       }
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleGoogleSuccess = async (credentialResponse) => {
+    setError('');
+    setMessage('');
+    setLoading(true);
+
+    try {
+      const res = await fetch('https://teena-secret-web-production-fbaf.up.railway.app/api/auth/google', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ credential: credentialResponse.credential }),
+      });
+
+      const text = await res.text();
+      let data;
+      try {
+        data = JSON.parse(text);
+      } catch (err) {
+        throw new Error(`Server Error (${res.status}): Could not parse Google auth response.`);
+      }
+
+      if (!res.ok) {
+        throw new Error(data.message || 'Google sign-in failed.');
+      }
+
+      if (data.token) {
+        localStorage.setItem('ts_token', data.token);
+      }
+      if (data.user) {
+        localStorage.setItem('ts_user', JSON.stringify(data.user));
+        if (onSuccess) onSuccess(data.user);
+      }
+      onClose();
     } catch (err) {
       setError(err.message);
     } finally {
@@ -216,6 +256,27 @@ export default function AuthModal({ isOpen, onClose, onSuccess }) {
             </div>
           )}
         </form>
+
+        {!isForgotPassword && (
+          <div className="mt-5">
+            <div className="relative flex items-center justify-center mb-4">
+              <div className="border-t border-neutral-800 w-full"></div>
+              <span className="bg-[#121212] px-3 text-[11px] uppercase tracking-wider text-neutral-500 absolute">
+                or continue with
+              </span>
+            </div>
+
+            <div className="flex justify-center w-full">
+              <GoogleLogin
+                theme="filled_black"
+                shape="pill"
+                text={isLogin ? 'signin_with' : 'signup_with'}
+                onSuccess={handleGoogleSuccess}
+                onError={() => setError('Google sign-in was cancelled or failed.')}
+              />
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

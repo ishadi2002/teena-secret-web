@@ -6,6 +6,7 @@ import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
 import nodemailer from 'nodemailer';
+import { OAuth2Client } from 'google-auth-library';
 
 dotenv.config();
 
@@ -21,6 +22,9 @@ app.use(express.urlencoded({ limit: '50mb', extended: true }));
 const PORT = process.env.PORT || 5000;
 const MONGO_URI = process.env.MONGO_URI || "mongodb+srv://teena_admin:Teena12345i@cluster.wci1ahb.mongodb.net/teena_store?retryWrites=true&w=majority&appName=Cluster";
 const JWT_SECRET = process.env.JWT_SECRET || "teena_secret_jwt_key_2025";
+const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || "608866886188-siuifaas9ak8r7tjg1fq5rjo88f30vuc.apps.googleusercontent.com";
+
+const googleClient = new OAuth2Client(GOOGLE_CLIENT_ID);
 
 // Official PayHere Sandbox Credentials
 const MERCHANT_ID = "1237984";
@@ -56,16 +60,18 @@ const productSchema = new mongoose.Schema({
 
 const Product = mongoose.model('Product', productSchema);
 
-// User Schema & Model
+// User Schema & Model (Google Auth compatible)
 const userSchema = new mongoose.Schema({
   name: { type: String, required: true },
   email: { type: String, required: true, unique: true },
-  password: { type: String, required: true },
+  password: { type: String, required: false }, // Optional for Google OAuth users
+  googleId: { type: String, unique: true, sparse: true },
+  avatar: { type: String, default: '' },
   role: { type: String, default: 'customer' },
-  phone: String,
-  address: String,
-  city: String,
-  postalCode: String,
+  phone: { type: String, default: '' },
+  address: { type: String, default: '' },
+  city: { type: String, default: '' },
+  postalCode: { type: String, default: '' },
   resetPasswordToken: String,
   resetPasswordExpires: Date
 }, { timestamps: true });
@@ -122,6 +128,98 @@ app.post('/api/payhere/hash', (req, res) => {
   });
 });
 
+// --- GOOGLE AUTH ROUTE ---
+app.post('/api/auth/google', async (req, res) => {
+  try {
+    const { credential } = req.body;
+    if (!credential) {
+      return res.status(400).json({ success: false, message: 'Google credential token is missing.' });
+    }
+
+    // 1. Verify Google token authenticity
+    const ticket = await googleClient.verifyIdToken({
+      idToken: credential,
+      audience: GOOGLE_CLIENT_ID,
+    });
+
+    const payload = ticket.getPayload();
+    const { sub: googleId, email, name, picture } = payload;
+    const cleanEmail = email.toLowerCase().trim();
+
+    let user = null;
+
+    // 2. Query MongoDB or in-memory fallback
+    if (mongoose.connection.readyState === 1) {
+      try {
+        user = await User.findOne({ googleId });
+        if (!user) {
+          user = await User.findOne({ email: cleanEmail });
+          if (user) {
+            user.googleId = googleId;
+            if (!user.avatar && picture) user.avatar = picture;
+            await user.save();
+          } else {
+            user = await User.create({
+              name: name || 'Google User',
+              email: cleanEmail,
+              googleId,
+              avatar: picture || '',
+              role: 'customer',
+            });
+          }
+        }
+      } catch (dbErr) {
+        console.error('Mongo Google Auth Error:', dbErr);
+      }
+    }
+
+    // Local fallback if DB is offline
+    if (!user) {
+      user = localUsers.find(u => u.googleId === googleId || u.email === cleanEmail);
+      if (user) {
+        user.googleId = googleId;
+        if (!user.avatar && picture) user.avatar = picture;
+      } else {
+        user = {
+          _id: Date.now().toString(),
+          name: name || 'Google User',
+          email: cleanEmail,
+          googleId,
+          avatar: picture || '',
+          role: 'customer'
+        };
+        localUsers.push(user);
+      }
+    }
+
+    // 3. Issue app session token
+    const token = jwt.sign(
+      { id: user._id, email: user.email, role: user.role },
+      JWT_SECRET,
+      { expiresIn: '7d' }
+    );
+
+    res.status(200).json({
+      success: true,
+      token,
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        avatar: user.avatar || '',
+        phone: user.phone || '',
+        address: user.address || '',
+        city: user.city || '',
+        postalCode: user.postalCode || ''
+      }
+    });
+  } catch (error) {
+    console.error('Google Auth Route Error:', error);
+    res.status(401).json({ success: false, message: 'Google authentication failed or token is invalid.' });
+  }
+});
+
 // --- AUTH & OTHER ROUTES ---
 app.post('/api/auth/login', async (req, res) => {
   try {
@@ -145,12 +243,13 @@ app.post('/api/auth/login', async (req, res) => {
     if (!user) user = localUsers.find(u => u.email === cleanEmail);
 
     if (!user) return res.status(400).json({ success: false, message: 'Invalid Credentials' });
+    if (!user.password) return res.status(400).json({ success: false, message: 'Please sign in with Google' });
 
     const isMatch = await bcrypt.compare(cleanPassword, user.password);
     if (!isMatch) return res.status(400).json({ success: false, message: 'Invalid Credentials' });
 
     const token = jwt.sign({ id: user._id || 'local', role: user.role }, JWT_SECRET, { expiresIn: '7d' });
-    res.json({ success: true, token, user: { name: user.name, email: user.email, role: user.role } });
+    res.json({ success: true, token, user: { name: user.name, email: user.email, role: user.role, avatar: user.avatar || '' } });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
@@ -179,7 +278,7 @@ app.post('/api/auth/register', async (req, res) => {
       name, 
       email: cleanEmail, 
       password: hashedPassword, 
-      phone, 
+      phone: phone || '', 
       address: address || '', 
       city: city || '', 
       postalCode: postalCode || '',

@@ -1,5 +1,6 @@
 ﻿import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { GoogleOAuthProvider } from '@react-oauth/google';
 import Navbar from './components/Navbar';
 import ProductCard from './components/ProductCard';
 import Footer from './components/Footer';
@@ -11,6 +12,7 @@ import { CartProvider } from './context/CartContext';
 import { Award, Sparkles, Truck } from 'lucide-react';
 
 const CATEGORIES = ["ALL", "FACIAL SETS", "SERUMS", "SKIN CARE", "BODY CARE"];
+const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID;
 
 function StoreContent() {
   const [selectedCategory, setSelectedCategory] = useState("ALL");
@@ -136,13 +138,15 @@ function StoreContent() {
 
 export default function App() {
   return (
-    <CartProvider>
-      <Router>
-        <Routes>
-          <Route path="/" element={<StoreContent />} />
-          <Route path="/reset-password/:token" element={<ResetPassword />} />
-        </Routes>
-      </Router>
-    </CartProvider>
+    <GoogleOAuthProvider clientId={GOOGLE_CLIENT_ID}>
+      <CartProvider>
+        <Router>
+          <Routes>
+            <Route path="/" element={<StoreContent />} />
+            <Route path="/reset-password/:token" element={<ResetPassword />} />
+          </Routes>
+        </Router>
+      </CartProvider>
+    </GoogleOAuthProvider>
   );
 }
