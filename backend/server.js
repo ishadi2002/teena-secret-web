@@ -19,6 +19,7 @@ app.use(cors({
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
+// Railway dynamically assigns PORT (default fallback to 5000 for local development)
 const PORT = process.env.PORT || 5000;
 const MONGO_URI = process.env.MONGO_URI || "mongodb+srv://teena_admin:Teena12345i@cluster.wci1ahb.mongodb.net/teena_store?retryWrites=true&w=majority&appName=Cluster";
 const JWT_SECRET = process.env.JWT_SECRET || "teena_secret_jwt_key_2025";
@@ -27,14 +28,16 @@ const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || "608866886188-siuifaas9
 const googleClient = new OAuth2Client(GOOGLE_CLIENT_ID);
 
 // Official PayHere Sandbox Credentials
-const MERCHANT_ID = "1237984";
-const MERCHANT_SECRET = "MzQyMjM1OTM2NjEyODkyMTExMjkzNDQwNDk5NDAzMTc1MDUzMDc3";
+const MERCHANT_ID = process.env.PAYHERE_MERCHANT_ID || "1237984";
+const MERCHANT_SECRET = process.env.PAYHERE_SECRET || "MzQyMjM1OTM2NjEyODkyMTExMjkzNDQwNDk5NDAzMTc1MDUzMDc3";
 
-// Robust Nodemailer Transporter Setup (Explicit host & port for maximum reliability)
+// Robust Nodemailer Transporter Setup
+// Forces IPv4 (family: 4) to prevent Railway's ENETUNREACH 2607:f8b0... IPv6 routing error
 const transporter = nodemailer.createTransport({
   host: 'smtp.gmail.com',
   port: 465,
   secure: true,
+  family: 4, // Prevents IPv6 lookup issues on cloud containers
   auth: {
     user: process.env.EMAIL_USER,
     pass: process.env.EMAIL_PASS
@@ -47,7 +50,7 @@ const transporter = nodemailer.createTransport({
 // Transporter Startup Verification Check
 transporter.verify((err, success) => {
   if (err) {
-    console.error('⚠️ [Email Transporter Status]: Connection Failed! Check EMAIL_USER and EMAIL_PASS in backend/.env.');
+    console.error('⚠️ [Email Transporter Status]: Connection Failed! Check EMAIL_USER and EMAIL_PASS in environment variables.');
     console.error('   Error detail:', err.message);
   } else {
     console.log('✅ [Email Transporter Status]: Ready to send emails via Gmail SMTP.');
@@ -57,7 +60,7 @@ transporter.verify((err, success) => {
 // Helper: Welcome Email
 const sendWelcomeEmail = async (customerEmail, customerName) => {
   if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
-    console.warn('[Email Warning]: Skipping welcome email. EMAIL_USER or EMAIL_PASS not defined in backend/.env');
+    console.warn('[Email Warning]: Skipping welcome email. EMAIL_USER or EMAIL_PASS not defined.');
     return;
   }
   if (!customerEmail) return;
@@ -95,7 +98,7 @@ const sendWelcomeEmail = async (customerEmail, customerName) => {
 // Helper: Order Confirmation Email
 const sendOrderConfirmationEmail = async (order) => {
   if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
-    console.warn('[Email Warning]: Skipping order confirmation email. EMAIL_USER or EMAIL_PASS not defined in backend/.env');
+    console.warn('[Email Warning]: Skipping order confirmation email. EMAIL_USER or EMAIL_PASS not defined.');
     return;
   }
   if (!order || !order.customerEmail) {
@@ -165,7 +168,7 @@ setInterval(() => {}, 1 << 30);
 
 // Root Route
 app.get('/', (req, res) => {
-  res.json({ success: true, message: "Teena's Secret Backend is Running Successfully!" });
+  res.json({ success: true, message: "Teena's Secret Backend is Running Successfully on Railway!" });
 });
 
 // Product Schema & Model
@@ -642,12 +645,13 @@ app.patch('/api/orders/:id/status', async (req, res) => {
   res.json({ success: true, message: "Status updated", order: targetOrder });
 });
 
+// Railway requires binding to 0.0.0.0
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server running continuously on port ${PORT}`);
   mongoose.connect(MONGO_URI, { 
     serverSelectionTimeoutMS: 30000,
     socketTimeoutMS: 45000,
-    family: 4 // Force IPv4 to bypass SRV DNS timeouts on local ISPs
+    family: 4 // Force IPv4 to bypass SRV DNS timeouts on cloud containers
   })
     .then(() => console.log('MongoDB Connected Successfully'))
     .catch((err) => console.log('MongoDB Connection Failed:', err.message));
