@@ -31,31 +31,33 @@ const googleClient = new OAuth2Client(GOOGLE_CLIENT_ID);
 const MERCHANT_ID = process.env.PAYHERE_MERCHANT_ID || "1237984";
 const MERCHANT_SECRET = process.env.PAYHERE_SECRET || "MzQyMjM1OTM2NjEyODkyMTExMjkzNDQwNDk5NDAzMTc1MDUzMDc3";
 
-// Robust Nodemailer Transporter Setup
-// Forces IPv4 (family: 4) to prevent Railway's ENETUNREACH 2607:f8b0... IPv6 routing error
+// Robust Nodemailer Transporter using Port 587 (STARTTLS)
+// Uses family: 4 to prevent ENETUNREACH IPv6 routing errors on cloud containers
 const transporter = nodemailer.createTransport({
   host: 'smtp.gmail.com',
-  port: 465,
-  secure: true,
-  family: 4, // Prevents IPv6 lookup issues on cloud containers
+  port: 587,
+  secure: false, // Must be false for 587 (upgrades via STARTTLS)
+  family: 4,     // Explicitly forces IPv4
   auth: {
     user: process.env.EMAIL_USER,
     pass: process.env.EMAIL_PASS
   },
   tls: {
     rejectUnauthorized: false
-  }
+  },
+  connectionTimeout: 10000 // Prevents infinite hanging
 });
 
-// Transporter Startup Verification Check
-transporter.verify((err, success) => {
-  if (err) {
-    console.error('⚠️ [Email Transporter Status]: Connection Failed! Check EMAIL_USER and EMAIL_PASS in environment variables.');
-    console.error('   Error detail:', err.message);
-  } else {
-    console.log('✅ [Email Transporter Status]: Ready to send emails via Gmail SMTP.');
-  }
-});
+// Non-blocking asynchronous verification check (Never blocks Railway health check)
+setTimeout(() => {
+  transporter.verify((err) => {
+    if (err) {
+      console.warn('⚠️ [Email Transporter Status]: Verification failed or timed out:', err.message);
+    } else {
+      console.log('✅ [Email Transporter Status]: Ready to send emails via Gmail SMTP (Port 587).');
+    }
+  });
+}, 4000);
 
 // Helper: Welcome Email
 const sendWelcomeEmail = async (customerEmail, customerName) => {
@@ -166,7 +168,7 @@ const sendOrderConfirmationEmail = async (order) => {
 
 setInterval(() => {}, 1 << 30);
 
-// Root Route
+// Root Route (Railway Health Check)
 app.get('/', (req, res) => {
   res.json({ success: true, message: "Teena's Secret Backend is Running Successfully on Railway!" });
 });
