@@ -1,13 +1,15 @@
-﻿import React, { useState } from 'react';
+﻿import React, { useState, useEffect } from 'react';
 import { X, ShoppingBag, CreditCard, Truck, MessageCircle, CheckCircle, ShieldCheck } from 'lucide-react';
 import { useCart } from '../context/CartContext';
+
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000';
 
 export default function CartModal({ isOpen, onClose }) {
   const { cart, removeFromCart, clearCart } = useCart();
   const [step, setStep] = useState('cart'); // 'cart', 'checkout', 'payhere', 'success'
   const [paymentMethod, setPaymentMethod] = useState('COD'); // 'COD', 'Card', 'WhatsApp'
   
-  // Customer Form State
+  // Customer Form State (Guests can enter manually, logged-in auto-fills)
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
@@ -20,18 +22,53 @@ export default function CartModal({ isOpen, onClose }) {
   const [cardExpiry, setCardExpiry] = useState('12/28');
   const [cardCvv, setCardCvv] = useState('123');
 
+  // Auto-fill logged in user details if available, otherwise remains blank for guest
+  useEffect(() => {
+    const savedUser = localStorage.getItem('ts_user');
+    if (savedUser) {
+      try {
+        const parsed = JSON.parse(savedUser);
+        if (parsed) {
+          setName(parsed.name || '');
+          setEmail(parsed.email || '');
+          setPhone(parsed.phone || '');
+          setAddress(parsed.address || '');
+        }
+      } catch (e) {
+        console.error('Error parsing stored user', e);
+      }
+    }
+  }, [isOpen]);
+
   if (!isOpen) return null;
 
   const totalAmount = cart.reduce((sum, item) => sum + (item.price * (item.quantity || 1)), 0);
 
+  // Helper function to resolve normalized email
+  const getResolvedEmail = () => {
+    if (email && email.trim()) {
+      return email.trim().toLowerCase();
+    }
+    const savedUser = localStorage.getItem('ts_user');
+    if (savedUser) {
+      try {
+        const parsed = JSON.parse(savedUser);
+        if (parsed?.email) return parsed.email.trim().toLowerCase();
+      } catch (e) {}
+    }
+    return 'customer@teenasecret.lk';
+  };
+
   const handleCheckoutSubmit = async (e) => {
     e.preventDefault();
+
+    const resolvedEmail = getResolvedEmail();
 
     const orderData = {
       items: cart,
       totalAmount,
       customerName: name,
-      customerEmail: email || 'customer@teenasecret.lk',
+      customerEmail: resolvedEmail,
       customerPhone: phone,
       customerAddress: address,
       paymentMethod,
@@ -40,11 +77,11 @@ export default function CartModal({ isOpen, onClose }) {
 
     if (paymentMethod === 'WhatsApp') {
       const itemsList = cart.map(i => `• ${i.name} (x${i.quantity || 1}) - Rs. ${i.price * (i.quantity || 1)}`).join('%0A');
-      const waMessage = `*New Direct Order - Teena's Secret*%0A%0A*Customer:* ${name}%0A*Phone:* ${phone}%0A*Address:* ${address}%0A%0A*Items:*%0A${itemsList}%0A%0A*Total:* Rs. ${totalAmount}%0A*Payment:* WhatsApp Order`;
+      const waMessage = `*New Direct Order - Teena's Secret*%0A%0A*Customer:* ${name}%0A*Email:* ${resolvedEmail}%0A*Phone:* ${phone}%0A*Address:* ${address}%0A%0A*Items:*%0A${itemsList}%0A%0A*Total:* Rs. ${totalAmount}%0A*Payment:* WhatsApp Order`;
       window.open(`https://wa.me/94771780683?text=${waMessage}`, '_blank');
       
       try {
-        await fetch('http://localhost:5000/api/orders', {
+        await fetch(`${API_BASE_URL}/api/orders`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(orderData)
@@ -64,7 +101,7 @@ export default function CartModal({ isOpen, onClose }) {
     // COD Flow
     setLoading(true);
     try {
-      await fetch('http://localhost:5000/api/orders', {
+      await fetch(`${API_BASE_URL}/api/orders`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(orderData)
@@ -83,11 +120,13 @@ export default function CartModal({ isOpen, onClose }) {
     e.preventDefault();
     setLoading(true);
 
+    const resolvedEmail = getResolvedEmail();
+
     const paidOrderData = {
       items: cart,
       totalAmount,
       customerName: name,
-      customerEmail: email || 'customer@teenasecret.lk',
+      customerEmail: resolvedEmail,
       customerPhone: phone,
       customerAddress: address,
       paymentMethod: `PayHere ${cardType} (Paid)`,
@@ -95,7 +134,7 @@ export default function CartModal({ isOpen, onClose }) {
     };
 
     try {
-      await fetch('http://localhost:5000/api/orders', {
+      await fetch(`${API_BASE_URL}/api/orders`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(paidOrderData)

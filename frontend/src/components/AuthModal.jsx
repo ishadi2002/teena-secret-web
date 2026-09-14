@@ -2,6 +2,8 @@
 import { X, AlertCircle } from 'lucide-react';
 import { GoogleLogin } from '@react-oauth/google';
 
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000';
+
 export default function AuthModal({ isOpen, onClose, onSuccess }) {
   const [isLogin, setIsLogin] = useState(true);
   const [isForgotPassword, setIsForgotPassword] = useState(false);
@@ -14,6 +16,34 @@ export default function AuthModal({ isOpen, onClose, onSuccess }) {
   const [loading, setLoading] = useState(false);
 
   if (!isOpen) return null;
+
+  const handleGoogleSuccess = async (credentialResponse) => {
+    setError('');
+    setLoading(true);
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/auth/google`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ credential: credentialResponse.credential }),
+      });
+
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.message || 'Google authentication failed');
+      }
+
+      if (data.token) localStorage.setItem('ts_token', data.token);
+      if (data.user) {
+        localStorage.setItem('ts_user', JSON.stringify(data.user));
+        if (onSuccess) onSuccess(data.user);
+      }
+      onClose();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -38,7 +68,7 @@ export default function AuthModal({ isOpen, onClose, onSuccess }) {
           : { name, email: cleanEmail, password: cleanPassword, phone: phone || '0700000000' };
       }
 
-      const res = await fetch(`https://teena-secret-web-production-fbaf.up.railway.app${endpoint}`, {
+      const res = await fetch(`${API_BASE_URL}${endpoint}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
@@ -59,54 +89,13 @@ export default function AuthModal({ isOpen, onClose, onSuccess }) {
       if (isForgotPassword) {
         setMessage('Password reset link sent to your email successfully!');
       } else {
-        if (data.token) {
-          localStorage.setItem('ts_token', data.token);
-        }
+        if (data.token) localStorage.setItem('ts_token', data.token);
         if (data.user) {
           localStorage.setItem('ts_user', JSON.stringify(data.user));
           if (onSuccess) onSuccess(data.user);
         }
         onClose();
       }
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleGoogleSuccess = async (credentialResponse) => {
-    setError('');
-    setMessage('');
-    setLoading(true);
-
-    try {
-      const res = await fetch('https://teena-secret-web-production-fbaf.up.railway.app/api/auth/google', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ credential: credentialResponse.credential }),
-      });
-
-      const text = await res.text();
-      let data;
-      try {
-        data = JSON.parse(text);
-      } catch (err) {
-        throw new Error(`Server Error (${res.status}): Could not parse Google auth response.`);
-      }
-
-      if (!res.ok) {
-        throw new Error(data.message || 'Google sign-in failed.');
-      }
-
-      if (data.token) {
-        localStorage.setItem('ts_token', data.token);
-      }
-      if (data.user) {
-        localStorage.setItem('ts_user', JSON.stringify(data.user));
-        if (onSuccess) onSuccess(data.user);
-      }
-      onClose();
     } catch (err) {
       setError(err.message);
     } finally {
@@ -164,6 +153,28 @@ export default function AuthModal({ isOpen, onClose, onSuccess }) {
         {message && (
           <div className="bg-emerald-950/40 border border-emerald-900/60 text-emerald-300 p-3 rounded-xl text-xs mb-4">
             <span>{message}</span>
+          </div>
+        )}
+
+        {/* Google Authentication Button */}
+        {!isForgotPassword && (
+          <div className="mb-4">
+            <div className="flex justify-center w-full">
+              <GoogleLogin
+                onSuccess={handleGoogleSuccess}
+                onError={() => setError('Google Sign-In was unsuccessful. Try again.')}
+                theme="filled_black"
+                shape="pill"
+                size="large"
+                width="100%"
+              />
+            </div>
+            <div className="relative flex items-center justify-center my-4">
+              <div className="border-t border-neutral-800 w-full"></div>
+              <span className="bg-[#121212] px-3 text-[10px] text-neutral-500 uppercase tracking-widest absolute">
+                or with email
+              </span>
+            </div>
           </div>
         )}
 
@@ -256,27 +267,6 @@ export default function AuthModal({ isOpen, onClose, onSuccess }) {
             </div>
           )}
         </form>
-
-        {!isForgotPassword && (
-          <div className="mt-5">
-            <div className="relative flex items-center justify-center mb-4">
-              <div className="border-t border-neutral-800 w-full"></div>
-              <span className="bg-[#121212] px-3 text-[11px] uppercase tracking-wider text-neutral-500 absolute">
-                or continue with
-              </span>
-            </div>
-
-            <div className="flex justify-center w-full">
-              <GoogleLogin
-                theme="filled_black"
-                shape="pill"
-                text={isLogin ? 'signin_with' : 'signup_with'}
-                onSuccess={handleGoogleSuccess}
-                onError={() => setError('Google sign-in was cancelled or failed.')}
-              />
-            </div>
-          </div>
-        )}
       </div>
     </div>
   );

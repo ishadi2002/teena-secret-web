@@ -1,12 +1,15 @@
 ﻿import React, { useState, useEffect } from 'react';
 import { Package, ShoppingCart, CheckCircle, Mail, DollarSign, Clock, RefreshCw, Store, Plus, Edit2, Trash2, Upload, LogOut } from 'lucide-react';
 
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000';
+
 export default function AdminDashboard({ onLogout, onProductUpdated }) {
   const [activeTab, setActiveTab] = useState('orders');
   const [statusFilter, setStatusFilter] = useState('All');
   const [products, setProducts] = useState([]);
   const [orders, setOrders] = useState([]);
   const [emailNotice, setEmailNotice] = useState('');
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   // Form State for Products
   const [editingId, setEditingId] = useState(null);
@@ -19,16 +22,33 @@ export default function AdminDashboard({ onLogout, onProductUpdated }) {
   const [loading, setLoading] = useState(false);
 
   const fetchData = async () => {
+    setIsRefreshing(true);
     try {
-      const pRes = await fetch('http://localhost:5000/api/products');
+      // Products fetch
+      const pRes = await fetch(`${API_BASE_URL}/api/products`);
       const pData = await pRes.json();
-      if (pData.success) setProducts(pData.products);
+      if (pData.success && Array.isArray(pData.products)) {
+        setProducts(pData.products);
+      } else if (Array.isArray(pData)) {
+        setProducts(pData);
+      }
 
-      const oRes = await fetch('http://localhost:5000/api/orders');
+      // Orders fetch
+      const oRes = await fetch(`${API_BASE_URL}/api/orders`);
       const oData = await oRes.json();
-      if (oData.success) setOrders(oData.orders);
+      console.log('[Admin Orders API Response]:', oData);
+
+      if (oData.success && Array.isArray(oData.orders)) {
+        setOrders(oData.orders);
+      } else if (Array.isArray(oData)) {
+        setOrders(oData);
+      } else {
+        setOrders([]);
+      }
     } catch (e) {
-      console.error(e);
+      console.error('Failed to fetch dashboard data:', e);
+    } finally {
+      setIsRefreshing(false);
     }
   };
 
@@ -59,7 +79,7 @@ export default function AdminDashboard({ onLogout, onProductUpdated }) {
       image: image || 'https://images.unsplash.com/photo-1598440947619-2c35fc9aa908?auto=format&fit=crop&w=600&q=80'
     };
 
-    const url = editingId ? `http://localhost:5000/api/products/${editingId}` : 'http://localhost:5000/api/products';
+    const url = editingId ? `${API_BASE_URL}/api/products/${editingId}` : `${API_BASE_URL}/api/products`;
     const method = editingId ? 'PUT' : 'POST';
 
     try {
@@ -95,7 +115,7 @@ export default function AdminDashboard({ onLogout, onProductUpdated }) {
   const handleDelete = async (id) => {
     if (!window.confirm("Are you sure you want to delete this product?")) return;
     try {
-      await fetch(`http://localhost:5000/api/products/${id}`, { method: 'DELETE' });
+      await fetch(`${API_BASE_URL}/api/products/${id}`, { method: 'DELETE' });
       fetchData();
       if (onProductUpdated) onProductUpdated();
     } catch (e) {
@@ -105,7 +125,7 @@ export default function AdminDashboard({ onLogout, onProductUpdated }) {
 
   const handleStatusChange = async (orderId, newStatus, customerEmail) => {
     try {
-      const res = await fetch(`http://localhost:5000/api/orders/${orderId}/status`, {
+      const res = await fetch(`${API_BASE_URL}/api/orders/${orderId}/status`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: newStatus })
@@ -131,18 +151,29 @@ export default function AdminDashboard({ onLogout, onProductUpdated }) {
     setImage('');
   };
 
-  // Metrics Calculations
+  // Metrics Calculations (case-insensitive checks)
   const totalRevenue = orders
-    .filter(o => o.status === 'Completed' || o.status === 'Processing')
+    .filter(o => {
+      const st = (o.status || '').toLowerCase();
+      return st === 'completed' || st === 'processing';
+    })
     .reduce((sum, o) => sum + (o.totalAmount || 0), 0);
   
-  const pendingCount = orders.filter(o => !o.status || o.status === 'Pending').length;
-  const confirmedCount = orders.filter(o => o.status === 'Completed' || o.status === 'Processing').length;
+  const pendingCount = orders.filter(o => {
+    const st = (o.status || '').toLowerCase();
+    return !st || st === 'pending';
+  }).length;
+
+  const confirmedCount = orders.filter(o => {
+    const st = (o.status || '').toLowerCase();
+    return st === 'completed' || st === 'processing';
+  }).length;
 
   const filteredOrders = orders.filter(o => {
+    const st = (o.status || 'pending').toLowerCase();
     if (statusFilter === 'All') return true;
-    if (statusFilter === 'Pending') return !o.status || o.status === 'Pending';
-    if (statusFilter === 'Confirmed') return o.status === 'Completed' || o.status === 'Processing';
+    if (statusFilter === 'Pending') return st === 'pending';
+    if (statusFilter === 'Confirmed') return st === 'completed' || st === 'processing';
     return true;
   });
 
@@ -168,7 +199,6 @@ export default function AdminDashboard({ onLogout, onProductUpdated }) {
           <div className="flex items-center gap-3">
             <button
               onClick={() => {
-                // Temporarily toggle admin view to view customer store as visitor
                 localStorage.removeItem('ts_user');
                 localStorage.removeItem('ts_token');
                 window.location.reload();
@@ -301,10 +331,11 @@ export default function AdminDashboard({ onLogout, onProductUpdated }) {
               ))}
               <button
                 onClick={fetchData}
+                disabled={isRefreshing}
                 className="p-1.5 text-neutral-400 hover:text-amber-400 transition ml-2 border-l border-neutral-800 pl-2"
                 title="Refresh Data"
               >
-                <RefreshCw className="w-4 h-4" />
+                <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin text-amber-400' : ''}`} />
               </button>
             </div>
           )}
@@ -316,7 +347,19 @@ export default function AdminDashboard({ onLogout, onProductUpdated }) {
             {filteredOrders.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-24 text-neutral-500 space-y-3">
                 <Package className="w-12 h-12 stroke-1 text-neutral-600" />
-                <p className="text-sm font-medium">No orders found in this view.</p>
+                <p className="text-sm font-medium">
+                  {orders.length > 0 
+                    ? `No orders matching filter "${statusFilter}". (Total store orders: ${orders.length})` 
+                    : 'No orders recorded in database yet.'}
+                </p>
+                {orders.length > 0 && statusFilter !== 'All' && (
+                  <button 
+                    onClick={() => setStatusFilter('All')} 
+                    className="text-xs text-amber-400 hover:underline uppercase font-bold tracking-wider"
+                  >
+                    View All {orders.length} Orders
+                  </button>
+                )}
               </div>
             ) : (
               <table className="w-full text-left text-sm">
@@ -333,12 +376,12 @@ export default function AdminDashboard({ onLogout, onProductUpdated }) {
                   {filteredOrders.map(o => (
                     <tr key={o._id} className="hover:bg-neutral-900/50 transition">
                       <td className="py-4 font-bold text-white">
-                        <div className="text-base">{o.customerName}</div>
-                        <div className="text-xs text-amber-400 font-normal">{o.customerEmail}</div>
+                        <div className="text-base">{o.customerName || 'Guest Customer'}</div>
+                        <div className="text-xs text-amber-400 font-normal font-mono">{o.customerEmail}</div>
                       </td>
                       <td className="py-4 text-neutral-300">
-                        <div className="font-semibold">{o.customerPhone}</div>
-                        <div className="text-xs text-neutral-400 mt-0.5">{o.customerAddress}</div>
+                        <div className="font-semibold">{o.customerPhone || 'N/A'}</div>
+                        <div className="text-xs text-neutral-400 mt-0.5">{o.customerAddress || 'No address provided'}</div>
                       </td>
                       <td className="py-4 text-neutral-300">
                         {o.items && o.items.map((item, idx) => (
@@ -348,15 +391,15 @@ export default function AdminDashboard({ onLogout, onProductUpdated }) {
                         ))}
                       </td>
                       <td className="py-4 font-mono font-extrabold text-amber-400 text-base">
-                        Rs. {o.totalAmount?.toLocaleString()}
+                        Rs. {(o.totalAmount || 0).toLocaleString()}
                       </td>
                       <td className="py-4">
                         <div className="flex flex-col gap-1.5">
                           <select
-                            value={o.status}
+                            value={o.status || 'Pending'}
                             onChange={(e) => handleStatusChange(o._id, e.target.value, o.customerEmail)}
                             className={`px-3 py-2 rounded-xl text-xs font-bold uppercase tracking-wider bg-[#1c1c1c] border ${
-                              o.status === 'Completed' || o.status === 'Processing'
+                              (o.status || '').toLowerCase() === 'completed' || (o.status || '').toLowerCase() === 'processing'
                                 ? 'text-emerald-400 border-emerald-500/50'
                                 : 'text-amber-400 border-amber-500/50'
                             }`}

@@ -6,6 +6,7 @@ import ProductCard from './components/ProductCard';
 import Footer from './components/Footer';
 import AuthModal from './components/AuthModal';
 import CartModal from './components/CartModal';
+import ProfileModal from './components/ProfileModal';
 import AdminDashboard from './components/AdminDashboard';
 import ResetPassword from './components/ResetPassword';
 import { CartProvider } from './context/CartContext';
@@ -13,12 +14,14 @@ import { Award, Sparkles, Truck } from 'lucide-react';
 
 const CATEGORIES = ["ALL", "FACIAL SETS", "SERUMS", "SKIN CARE", "BODY CARE"];
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID;
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000';
 
 function StoreContent() {
   const [selectedCategory, setSelectedCategory] = useState("ALL");
   const [products, setProducts] = useState([]);
   const [isAuthOpen, setIsAuthOpen] = useState(false);
   const [isCartOpen, setIsCartOpen] = useState(false);
+  const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [user, setUser] = useState(() => {
     const saved = localStorage.getItem('ts_user');
     return saved ? JSON.parse(saved) : null;
@@ -26,7 +29,7 @@ function StoreContent() {
 
   const loadProducts = async () => {
     try {
-      const res = await fetch('https://teena-secret-web-production-fbaf.up.railway.app/api/products');
+      const res = await fetch(`${API_BASE_URL}/api/products`);
       const data = await res.json();
       if (data.success) setProducts(data.products);
     } catch (e) {
@@ -42,6 +45,7 @@ function StoreContent() {
     localStorage.removeItem('ts_user');
     localStorage.removeItem('ts_token');
     setUser(null);
+    setIsProfileOpen(false);
   };
 
   const filteredProducts = selectedCategory === "ALL"
@@ -65,6 +69,7 @@ function StoreContent() {
         user={user}
         onOpenCart={() => setIsCartOpen(true)} 
         onOpenAuth={() => setIsAuthOpen(true)}
+        onOpenProfile={() => setIsProfileOpen(true)}
         onLogout={handleLogout}
       />
 
@@ -131,6 +136,13 @@ function StoreContent() {
       <CartModal
         isOpen={isCartOpen}
         onClose={() => setIsCartOpen(false)}
+      />
+
+      <ProfileModal
+        isOpen={isProfileOpen}
+        onClose={() => setIsProfileOpen(false)}
+        user={user}
+        onUserUpdated={(updatedUser) => setUser(updatedUser)}
       />
     </div>
   );

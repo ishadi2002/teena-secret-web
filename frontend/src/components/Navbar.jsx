@@ -2,7 +2,7 @@
 import { ShoppingBag, User, LogOut, LayoutDashboard } from 'lucide-react';
 import { useCart } from '../context/CartContext';
 
-const Navbar = ({ user, onOpenCart, onOpenAuth, onOpenDashboard, onLogout }) => {
+const Navbar = ({ user, onOpenCart, onOpenAuth, onOpenDashboard, onOpenProfile, onLogout }) => {
   const cartContext = useCart ? useCart() : null;
   const cart = cartContext?.cart || [];
   const cartCount = cart.reduce((sum, item) => sum + (item.quantity || 1), 0);
@@ -38,7 +38,29 @@ const Navbar = ({ user, onOpenCart, onOpenAuth, onOpenDashboard, onLogout }) => 
                     <span>ADMIN PANEL</span>
                   </button>
                 )}
-                <span className="text-xs text-neutral-300 font-medium">{user.name}</span>
+
+                {/* Clickable Profile & Order History Trigger */}
+                <button
+                  onClick={onOpenProfile}
+                  className="flex items-center gap-2 border border-neutral-800 bg-[#161616] hover:border-amber-500 px-3 py-1.5 rounded-full transition group"
+                  title="View Profile & Orders"
+                >
+                  {user.avatar ? (
+                    <img 
+                      src={user.avatar} 
+                      alt="avatar" 
+                      className="w-5 h-5 rounded-full object-cover border border-amber-500/50" 
+                    />
+                  ) : (
+                    <div className="w-5 h-5 rounded-full bg-amber-500/20 text-amber-400 font-bold text-[10px] flex items-center justify-center border border-amber-500/40">
+                      {user.name?.charAt(0) || 'U'}
+                    </div>
+                  )}
+                  <span className="text-xs text-neutral-300 font-medium group-hover:text-amber-400 transition">
+                    {user.name?.split(' ')[0]}
+                  </span>
+                </button>
+
                 <button
                   onClick={onLogout}
                   title="Sign Out"

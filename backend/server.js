@@ -30,14 +30,136 @@ const googleClient = new OAuth2Client(GOOGLE_CLIENT_ID);
 const MERCHANT_ID = "1237984";
 const MERCHANT_SECRET = "MzQyMjM1OTM2NjEyODkyMTExMjkzNDQwNDk5NDAzMTc1MDUzMDc3";
 
-// Nodemailer Transporter Setup (Gmail App Password)
+// Robust Nodemailer Transporter Setup (Explicit host & port for maximum reliability)
 const transporter = nodemailer.createTransport({
-  service: 'gmail',
+  host: 'smtp.gmail.com',
+  port: 465,
+  secure: true,
   auth: {
     user: process.env.EMAIL_USER,
     pass: process.env.EMAIL_PASS
+  },
+  tls: {
+    rejectUnauthorized: false
   }
 });
+
+// Transporter Startup Verification Check
+transporter.verify((err, success) => {
+  if (err) {
+    console.error('⚠️ [Email Transporter Status]: Connection Failed! Check EMAIL_USER and EMAIL_PASS in backend/.env.');
+    console.error('   Error detail:', err.message);
+  } else {
+    console.log('✅ [Email Transporter Status]: Ready to send emails via Gmail SMTP.');
+  }
+});
+
+// Helper: Welcome Email
+const sendWelcomeEmail = async (customerEmail, customerName) => {
+  if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
+    console.warn('[Email Warning]: Skipping welcome email. EMAIL_USER or EMAIL_PASS not defined in backend/.env');
+    return;
+  }
+  if (!customerEmail) return;
+
+  try {
+    const info = await transporter.sendMail({
+      from: `"Teena's Secret" <${process.env.EMAIL_USER}>`,
+      to: customerEmail,
+      subject: "Welcome to Teena's Secret! ✨",
+      html: `
+        <div style="background-color: #0b0b0b; color: #ffffff; font-family: 'Segoe UI', Arial, sans-serif; padding: 30px; border-radius: 12px; max-width: 550px; margin: auto; border: 1px solid #222;">
+          <h1 style="color: #f59e0b; text-transform: uppercase; letter-spacing: 2px; font-size: 22px; text-align: center; margin-bottom: 5px;">Teena's Secret</h1>
+          <p style="color: #888; text-align: center; font-size: 11px; text-transform: uppercase; letter-spacing: 3px; margin-top: 0;">Glow Up With Confidence</p>
+          <hr style="border: none; border-top: 1px solid #222; margin: 20px 0;" />
+          <h2 style="font-size: 18px; color: #fff;">Welcome, ${customerName || 'Valued Customer'}!</h2>
+          <p style="color: #bbb; line-height: 1.6; font-size: 13px;">
+            Thank you for registering with <strong>Teena's Secret</strong>. You now have access to our signature cosmetic collections, real-time order history, and express checkout.
+          </p>
+          <div style="background: #161616; border: 1px solid #2a2a2a; border-radius: 8px; padding: 15px; margin: 20px 0; text-align: center;">
+            <p style="color: #f59e0b; font-weight: bold; margin: 0; font-size: 13px;">100% Authentic Organic Beauty Products</p>
+            <p style="color: #888; margin: 5px 0 0 0; font-size: 11px;">Islandwide Cash on Delivery & Secure Online Card Payments</p>
+          </div>
+          <p style="color: #777; font-size: 11px; text-align: center; margin-top: 30px;">
+            Need help? Contact us via WhatsApp or reply directly to this email.
+          </p>
+        </div>
+      `
+    });
+    console.log(`[Email Dispatched]: Welcome email sent to ${customerEmail} (MessageId: ${info.messageId})`);
+  } catch (err) {
+    console.error('[Email Error - Registration]:', err.message);
+  }
+};
+
+// Helper: Order Confirmation Email
+const sendOrderConfirmationEmail = async (order) => {
+  if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
+    console.warn('[Email Warning]: Skipping order confirmation email. EMAIL_USER or EMAIL_PASS not defined in backend/.env');
+    return;
+  }
+  if (!order || !order.customerEmail) {
+    console.warn('[Email Warning]: Order has no customerEmail. Confirmation email not sent.');
+    return;
+  }
+
+  try {
+    const itemsRows = (order.items || []).map(item => `
+      <tr style="border-bottom: 1px solid #222;">
+        <td style="padding: 10px 0; color: #ddd; font-size: 13px;">${item.name}</td>
+        <td style="padding: 10px 0; color: #f59e0b; text-align: center; font-size: 13px;">x${item.quantity || 1}</td>
+        <td style="padding: 10px 0; color: #ddd; text-align: right; font-family: monospace; font-size: 13px;">Rs. ${((item.price || 0) * (item.quantity || 1)).toLocaleString()}</td>
+      </tr>
+    `).join('');
+
+    const info = await transporter.sendMail({
+      from: `"Teena's Secret" <${process.env.EMAIL_USER}>`,
+      to: order.customerEmail,
+      subject: `Order Confirmation - #${String(order._id).slice(-6).toUpperCase()}`,
+      html: `
+        <div style="background-color: #0b0b0b; color: #ffffff; font-family: 'Segoe UI', Arial, sans-serif; padding: 30px; border-radius: 12px; max-width: 600px; margin: auto; border: 1px solid #222;">
+          <h1 style="color: #f59e0b; text-transform: uppercase; letter-spacing: 2px; font-size: 22px; text-align: center; margin-bottom: 5px;">Teena's Secret</h1>
+          <p style="color: #888; text-align: center; font-size: 11px; text-transform: uppercase; letter-spacing: 3px; margin-top: 0;">Order Receipt</p>
+          <hr style="border: none; border-top: 1px solid #222; margin: 20px 0;" />
+          <h2 style="font-size: 16px; color: #10b981; margin-bottom: 5px;">✓ Order Placed Successfully!</h2>
+          <p style="color: #aaa; font-size: 12px; margin-top: 0;">Order ID: <strong style="color: #fff; font-family: monospace;">${order._id}</strong></p>
+          
+          <div style="background: #141414; border: 1px solid #222; border-radius: 8px; padding: 15px; margin: 15px 0; font-size: 12px;">
+            <p style="margin: 3px 0; color: #aaa;"><strong>Recipient:</strong> ${order.customerName || 'Customer'}</p>
+            <p style="margin: 3px 0; color: #aaa;"><strong>Phone:</strong> ${order.customerPhone || 'N/A'}</p>
+            <p style="margin: 3px 0; color: #aaa;"><strong>Delivery Address:</strong> ${order.customerAddress || 'N/A'}</p>
+            <p style="margin: 3px 0; color: #aaa;"><strong>Payment Mode:</strong> <span style="color: #f59e0b;">${order.paymentMethod || 'COD'}</span></p>
+          </div>
+
+          <table style="width: 100%; border-collapse: collapse; margin-top: 20px;">
+            <thead>
+              <tr style="border-bottom: 1px solid #333; text-align: left; color: #777; font-size: 10px; text-transform: uppercase;">
+                <th style="padding-bottom: 8px;">Item</th>
+                <th style="padding-bottom: 8px; text-align: center;">Qty</th>
+                <th style="padding-bottom: 8px; text-align: right;">Price</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${itemsRows}
+            </tbody>
+          </table>
+
+          <div style="text-align: right; margin-top: 20px; border-top: 1px solid #333; padding-top: 15px;">
+            <span style="color: #888; font-size: 12px; text-transform: uppercase;">Total Amount:</span>
+            <span style="color: #f59e0b; font-size: 20px; font-weight: bold; font-family: monospace; margin-left: 10px;">Rs. ${(order.totalAmount || 0).toLocaleString()}</span>
+          </div>
+
+          <p style="color: #777; font-size: 11px; text-align: center; margin-top: 30px;">
+            Thank you for shopping with Teena's Secret. Your order will be dispatched promptly.
+          </p>
+        </div>
+      `
+    });
+    console.log(`[Email Dispatched]: Order confirmation sent to ${order.customerEmail} (MessageId: ${info.messageId})`);
+  } catch (err) {
+    console.error('[Email Error - Order Confirmation]:', err.message);
+  }
+};
 
 setInterval(() => {}, 1 << 30);
 
@@ -60,11 +182,11 @@ const productSchema = new mongoose.Schema({
 
 const Product = mongoose.model('Product', productSchema);
 
-// User Schema & Model (Google Auth compatible)
+// User Schema & Model
 const userSchema = new mongoose.Schema({
   name: { type: String, required: true },
   email: { type: String, required: true, unique: true },
-  password: { type: String, required: false }, // Optional for Google OAuth users
+  password: { type: String, required: false },
   googleId: { type: String, unique: true, sparse: true },
   avatar: { type: String, default: '' },
   role: { type: String, default: 'customer' },
@@ -84,7 +206,7 @@ const orderSchema = new mongoose.Schema({
   items: Array,
   totalAmount: Number,
   customerName: String,
-  customerEmail: String,
+  customerEmail: { type: String, index: true },
   customerPhone: String,
   customerAddress: String,
   paymentMethod: { type: String, default: 'COD' },
@@ -136,7 +258,6 @@ app.post('/api/auth/google', async (req, res) => {
       return res.status(400).json({ success: false, message: 'Google credential token is missing.' });
     }
 
-    // 1. Verify Google token authenticity
     const ticket = await googleClient.verifyIdToken({
       idToken: credential,
       audience: GOOGLE_CLIENT_ID,
@@ -147,8 +268,8 @@ app.post('/api/auth/google', async (req, res) => {
     const cleanEmail = email.toLowerCase().trim();
 
     let user = null;
+    let isNewUser = false;
 
-    // 2. Query MongoDB or in-memory fallback
     if (mongoose.connection.readyState === 1) {
       try {
         user = await User.findOne({ googleId });
@@ -166,6 +287,7 @@ app.post('/api/auth/google', async (req, res) => {
               avatar: picture || '',
               role: 'customer',
             });
+            isNewUser = true;
           }
         }
       } catch (dbErr) {
@@ -173,7 +295,6 @@ app.post('/api/auth/google', async (req, res) => {
       }
     }
 
-    // Local fallback if DB is offline
     if (!user) {
       user = localUsers.find(u => u.googleId === googleId || u.email === cleanEmail);
       if (user) {
@@ -189,10 +310,14 @@ app.post('/api/auth/google', async (req, res) => {
           role: 'customer'
         };
         localUsers.push(user);
+        isNewUser = true;
       }
     }
 
-    // 3. Issue app session token
+    if (isNewUser) {
+      sendWelcomeEmail(cleanEmail, user.name);
+    }
+
     const token = jwt.sign(
       { id: user._id, email: user.email, role: user.role },
       JWT_SECRET,
@@ -220,7 +345,7 @@ app.post('/api/auth/google', async (req, res) => {
   }
 });
 
-// --- AUTH & OTHER ROUTES ---
+// --- AUTH: LOGIN ---
 app.post('/api/auth/login', async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -255,6 +380,7 @@ app.post('/api/auth/login', async (req, res) => {
   }
 });
 
+// --- AUTH: REGISTER ---
 app.post('/api/auth/register', async (req, res) => {
   try {
     const { name, email, password, phone, address, city, postalCode } = req.body;
@@ -292,8 +418,62 @@ app.post('/api/auth/register', async (req, res) => {
       } catch (e) { localUsers.push(newUserObj); }
     } else { localUsers.push(newUserObj); }
 
+    // Dispatch welcome email
+    sendWelcomeEmail(cleanEmail, name);
+
     const token = jwt.sign({ email: cleanEmail, role: 'customer' }, JWT_SECRET, { expiresIn: '7d' });
     res.json({ success: true, token, user: { name, email: cleanEmail, role: 'customer' } });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// --- EDIT PROFILE ROUTE ---
+app.put('/api/auth/profile', async (req, res) => {
+  try {
+    const { email, name, phone, address, city, postalCode } = req.body;
+    if (!email) {
+      return res.status(400).json({ success: false, message: 'User email is required' });
+    }
+
+    const cleanEmail = email.toLowerCase().trim();
+    let updatedUser = null;
+
+    if (mongoose.connection.readyState === 1) {
+      updatedUser = await User.findOneAndUpdate(
+        { email: cleanEmail },
+        { name, phone, address, city, postalCode },
+        { new: true }
+      );
+    }
+
+    if (!updatedUser) {
+      const idx = localUsers.findIndex(u => u.email === cleanEmail);
+      if (idx !== -1) {
+        localUsers[idx] = { ...localUsers[idx], name, phone, address, city, postalCode };
+        updatedUser = localUsers[idx];
+      }
+    }
+
+    if (!updatedUser) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+
+    res.json({
+      success: true,
+      message: 'Profile updated successfully',
+      user: {
+        id: updatedUser._id,
+        name: updatedUser.name,
+        email: updatedUser.email,
+        role: updatedUser.role,
+        avatar: updatedUser.avatar || '',
+        phone: updatedUser.phone || '',
+        address: updatedUser.address || '',
+        city: updatedUser.city || '',
+        postalCode: updatedUser.postalCode || ''
+      }
+    });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
@@ -351,29 +531,76 @@ app.delete('/api/products/:id', async (req, res) => {
 });
 
 // --- ORDER ROUTES ---
+
+// 1. Customer Order History
+app.get('/api/orders/user/:email', async (req, res) => {
+  try {
+    const rawEmail = decodeURIComponent(req.params.email).trim().toLowerCase();
+    let userOrders = [];
+
+    if (mongoose.connection.readyState === 1) {
+      const escapedEmail = rawEmail.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      userOrders = await Order.find({ 
+        customerEmail: { $regex: new RegExp(`^${escapedEmail}$`, 'i') } 
+      }).sort({ createdAt: -1 });
+    } else {
+      userOrders = localOrders.filter(
+        o => (o.customerEmail || '').trim().toLowerCase() === rawEmail
+      );
+    }
+
+    res.json({ success: true, orders: userOrders });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// 2. All Orders (Admin)
 app.get('/api/orders', async (req, res) => {
   try {
+    let dbOrders = [];
     if (mongoose.connection.readyState === 1) {
-      const orders = await Order.find().sort({ createdAt: -1 });
-      return res.json({ success: true, orders });
+      dbOrders = await Order.find().sort({ createdAt: -1 });
     }
-  } catch (e) {}
-  res.json({ success: true, orders: localOrders });
+    const combined = [...dbOrders, ...localOrders];
+    const uniqueOrders = Array.from(new Map(combined.map(o => [String(o._id), o])).values());
+    
+    return res.json({ success: true, orders: uniqueOrders });
+  } catch (e) {
+    return res.json({ success: true, orders: localOrders });
+  }
 });
 
+// 3. Create New Order (Sends Customer Receipt Email)
 app.post('/api/orders', async (req, res) => {
-  const newOrd = { ...req.body, _id: 'ord_' + Date.now(), status: 'Pending' };
   try {
+    const cleanCustomerEmail = (req.body.customerEmail || '').trim().toLowerCase();
+    const orderPayload = {
+      ...req.body,
+      customerEmail: cleanCustomerEmail,
+      status: req.body.status || 'Pending'
+    };
+
+    let savedOrder = null;
     if (mongoose.connection.readyState === 1) {
-      const o = new Order({ ...req.body, status: 'Pending' });
-      await o.save();
-      return res.json({ success: true, order: o });
+      const o = new Order(orderPayload);
+      savedOrder = await o.save();
     }
-  } catch (e) {}
-  localOrders.unshift(newOrd);
-  res.json({ success: true, order: newOrd });
+
+    const finalOrder = savedOrder ? savedOrder.toObject() : { ...orderPayload, _id: 'ord_' + Date.now() };
+    localOrders.unshift(finalOrder);
+
+    // Send itemized confirmation email
+    sendOrderConfirmationEmail(finalOrder);
+
+    res.json({ success: true, order: finalOrder });
+  } catch (err) {
+    console.error('[Create Order Error]:', err.message);
+    res.status(500).json({ success: false, message: err.message });
+  }
 });
 
+// 4. Update Order Status (Sends Status Notification Email)
 app.patch('/api/orders/:id/status', async (req, res) => {
   const { id } = req.params;
   const { status } = req.body;
@@ -393,6 +620,25 @@ app.patch('/api/orders/:id/status', async (req, res) => {
     }
   }
 
+  // Send status update notification email
+  if (targetOrder && targetOrder.customerEmail && process.env.EMAIL_USER && process.env.EMAIL_PASS) {
+    try {
+      await transporter.sendMail({
+        from: `"Teena's Secret" <${process.env.EMAIL_USER}>`,
+        to: targetOrder.customerEmail,
+        subject: `Order Status Update: ${status} (#${String(targetOrder._id).slice(-6).toUpperCase()})`,
+        html: `
+          <div style="background-color: #0b0b0b; color: #ffffff; font-family: 'Segoe UI', Arial, sans-serif; padding: 25px; border-radius: 12px; max-width: 550px; margin: auto; border: 1px solid #222;">
+            <h2 style="color: #f59e0b; margin-top: 0;">Order Status Updated</h2>
+            <p style="color: #ccc; font-size: 13px;">Your order has been marked as: <strong style="color: #10b981; font-size: 14px;">${status}</strong></p>
+            <p style="color: #aaa; font-size: 12px;">Order ID: ${targetOrder._id}</p>
+            <p style="color: #888; font-size: 11px; margin-top: 20px;">Teena's Secret Beauty Store</p>
+          </div>
+        `
+      });
+    } catch (e) {}
+  }
+
   res.json({ success: true, message: "Status updated", order: targetOrder });
 });
 
@@ -401,6 +647,7 @@ app.listen(PORT, '0.0.0.0', () => {
   mongoose.connect(MONGO_URI, { 
     serverSelectionTimeoutMS: 30000,
     socketTimeoutMS: 45000,
+    family: 4 // Force IPv4 to bypass SRV DNS timeouts on local ISPs
   })
     .then(() => console.log('MongoDB Connected Successfully'))
     .catch((err) => console.log('MongoDB Connection Failed:', err.message));
